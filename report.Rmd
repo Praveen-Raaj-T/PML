@@ -1,0 +1,121 @@
+---
+title: "Activity Prediction - PML Assignment"
+author: "Praveen Raaj. T"
+date: "22 October 2020"
+---
+
+## Introduction  
+With the help of devices like Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+We have used data from accelerometers to predict the manner in which the participants did their exercises. This data is given by the "classe" variable in our dataset. 
+
+## Downloading the Data
+We download the training and test data from the given url.
+```{r, cache = T}
+train_data_url <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_data_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train_file <- "./data/pml-training.csv"
+test_file  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(train_file)) {
+  download.file(train_data_url, destfile=train_file, method="curl")
+}
+if (!file.exists(test_file)) {
+  download.file(test_data_url, destfile=test_file, method="curl")
+}
+```  
+
+## Getting Started  
+We import the modules required for this project.
+```{r, cache = T}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+### Reading the Data
+We read the downloaded training and test data as dataframes.
+```{r, cache = T}
+train_raw <- read.csv("./data/pml-training.csv")
+test_raw <- read.csv("./data/pml-testing.csv")
+dim(train_raw)
+dim(test_raw)
+```
+The training data contains 19622 observations and 160 variables and the test data contains 20 observations and 160 variables. We try to predict the variable "classe".
+
+### Data Cleaning
+We clean the datasets by removing the entries with corrupted or missing data and the entries that are unnecessary.
+```{r, cache = T}
+sum(complete.cases(train_raw))
+```
+- We remove columns that contain NA missing values.
+```{r, cache = T}
+train_raw <- train_raw[, colSums(is.na(train_raw)) == 0] 
+test_raw <- test_raw[, colSums(is.na(test_raw)) == 0] 
+```  
+- We remove of some columns that dont contribute to th prediction.
+```{r, cache = T}
+classe <- train_raw$classe
+train_remove <- grepl("^X|timestamp|window", names(train_raw))
+train_raw <- train_raw[, !train_remove]
+train_clean <- train_raw[, sapply(train_raw, is.numeric)]
+train_clean$classe <- classe
+test_remove <- grepl("^X|timestamp|window", names(test_raw))
+test_raw <- test_raw[, !test_remove]
+test_clean <- test_raw[, sapply(test_raw, is.numeric)]
+```
+
+We have now cleaned our data, the training data now contains 19622 observations with 53 columns and the test data contains 20 observations with 53 columns. The "classe" variable is included in our clean data. 
+
+### Data slicing
+We split our training data into two parts, training and validation data in a 3:1 ratio. 
+```{r, cache = T}
+set.seed(22519)
+in_train <- createDataPartition(train_clean$classe, p=0.75, list=F)
+train_data <- train_clean[in_train, ]
+test_data <- train_clean[-in_train, ]
+```
+
+## Data Modeling
+We have used the **random forest** algorithm to fit our model. We also use **5-fold cross validation** while we apply our algorithm.  
+```{r cache=FALSE}
+control_Rf <- caret::trainControl(method="cv", 5)
+model_Rf <- caret::train(classe ~ ., data=train_data , method="rf", trControl=control_Rf, ntree=10)
+model_Rf
+```
+
+We use our validation data to estimate our model's prediction.  
+```{r, cache = T}
+predict_Rf <- predict(model_Rf, test_data)
+confusionMatrix(factor(test_data$classe), factor(predict_Rf))
+
+accuracy <- postResample(factor(predict_Rf), factor(test_data$classe))
+accuracy[1]
+
+oos <- 1 - as.numeric(confusionMatrix(factor(test_data$classe), factor(predict_Rf))$overall[1])
+oos
+```
+
+
+## Test Data Prediction
+We apply our trained model on the test data, that we downloaded earlier. 
+```{r, cache = T}
+result <- predict(model_Rf, test_clean[, -length(names(test_clean))])
+result
+```  
+
+## Appendix: Figures
+### 1. Correlation Matrix  
+```{r, cache = T}
+cpt <- cor(train_data[, -length(names(train_data))])
+corrplot(cpt, method="color", tl.cex = 0.5)
+```
+
+### 2. Decision Tree
+```{r, cache = T}
+tree_model <- rpart(classe ~ ., data=train_data, method="class")
+prp(tree_model)
+```
